@@ -1,0 +1,5 @@
+# The notary policy: it records, it never blocks. Every tool an agent notarizes is flagged, so the decision is signed
+# and the agent's action recorded whatever it was (docs/notary.md).
+version: 'notary-1'
+description: Tracekit Notary, agents' own actions, flag only
+unknown_tools: flag

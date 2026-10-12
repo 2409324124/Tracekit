@@ -276,6 +276,15 @@ Each row says what the limit is, why it is so, what to do about it, and where th
 | The public witness's compose file pins Caddy by tag, not digest. | The digest is taken when it is deployed. | Pin `caddy` by digest before production. | [deploy/public-witness](../deploy/public-witness/README.md) |
 | The public witness's `state.db` must never roll back: a restored older copy could cosign a fork past it. | It is what keeps the witness from cosigning two trees. | A lost or rolled-back state means a new witness key and a tracekit release with the new vkey. | [deploy/public-witness](../deploy/public-witness/README.md#backup) |
 
+## Notary (1.2)
+
+| Limit | Why it is so | What to do | Details |
+|---|---|---|---|
+| A notarized record (source `notary`, T3) proves only that the agent claimed the action then, unaltered since: not that it ran, that its result is true, or that nothing else ran. | The agent chooses what to send; no layer saw the call. | Read the `tiers` line; for evidence of execution, add an out-of-process layer (T2). | [notary](notary.md#what-a-notarized-record-proves-and-what-it-doesnt) |
+| The notary's quotas, counters and open runs are kept in memory: a restart resets the daily counts and opens a new run at each agent's next action. | Phase 1 is one process with a free tier. | Run one replica; export runs before a planned restart. | [notary](notary.md#quotas-and-the-kill-switch) |
+| A notarized agent's name is its own word; its contact is kept by the notary only. | Registration is open and unverified; the log records the token identity and the name it gave. | Identify an agent by its `token:a-…` identity, not its name. | [notary](notary.md#the-four-operations) |
+| The notary's `verify` refuses bundles over `verify_max_bytes` (8 MiB). | It verifies for anyone, for free. | Verify offline with `tracekit verify`. | [notary](notary.md#limits) |
+
 ## Investigation (`tracekit why`)
 
 | Limit | Why it is so | What to do | Details |

@@ -108,6 +108,49 @@ services:
     entrypoint: [tracekit, mcp-gateway, serve, --config, /etc/tracekit/custody/mcp-gateway.yaml]
     volumes: [./custody/mcp-gateway:/etc/tracekit/custody:ro, signer-run:/run/tracekit-signer:ro]
 
+  # Tracekit Notary (profile notary: `docker compose --profile notary up -d`; docs/notary.md): agents notarize their
+  # own actions over MCP and A2A on 8443. Its own signer, apart from yours: one public tenant, a policy that only
+  # flags, a file store; only the notary reaches its socket, and reads its store (read-only) for receipts and exports.
+  # Configs in ./notary/; put the notary's TLS certificate and key in ./notary/tls/.
+  notary-signer:
+    build: {context: ../.., dockerfile: deploy/docker/Dockerfile}
+    image: tracekit-signer:compose
+    profiles: [notary]
+    entrypoint: [tracekit, signer, serve, --config, /etc/tracekit/notary/signer.yaml]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    volumes:
+      - ./notary:/etc/tracekit/notary:ro
+      - notary-signer-data:/var/lib/tracekit-notary-signer
+      - notary-run:/run/tracekit-notary
+    network_mode: none                            # nothing reaches it but the notary, over the socket
+    restart: unless-stopped
+
+  notary:
+    build: {context: ../.., dockerfile: deploy/docker/Dockerfile}
+    image: tracekit-signer:compose
+    profiles: [notary]
+    user: "10015:10001"                           # uid: the identity notary/signer.yaml lists in `notaries`; group:
+                                                  # its signer's, to read the store (never the keys: 0600)
+    entrypoint: [tracekit, notary, serve, --config, /etc/tracekit/notary/notary.yaml]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    healthcheck: {disable: true}
+    volumes:
+      - ./notary:/etc/tracekit/notary:ro
+      - notary-data:/var/lib/tracekit-notary                       # the agents' tokens and registrations
+      - notary-signer-data:/var/lib/tracekit-notary-signer:ro      # its signer's store, read-only
+      - notary-run:/run/tracekit-notary
+    networks: [front]                             # agents reach it; it calls out to nothing
+    ports: ["${NOTARY_PORT:-8443}:8443"]
+    depends_on:
+      notary-signer: {condition: service_healthy}
+    restart: unless-stopped
+
   agent:
     # An example agent: another uid, its own network, only the socket volume. `docker compose run --rm agent`
     # Keep any agent non-root with cap_drop ALL and no-new-privileges: the socket names its peers by uid, and the
@@ -146,6 +189,9 @@ volumes:
   signer-data:
   signer-run:
   witness-data:
+  notary-signer-data:
+  notary-data:
+  notary-run:
 
 secrets:
   signer.dsn: {file: ./secrets/signer.dsn}

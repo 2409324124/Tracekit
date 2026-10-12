@@ -191,14 +191,14 @@ class Case(unittest.TestCase):
         version before says UNVERIFIABLE, never FAILED."""
         log = self.log(f"gated-{random.random()}")
         log.epoch(KEY1)
-        for type_, data, run in added:
+        for type_, data, run, *envelope in added:   # envelope: the record's own fields (source), if any
             if type_ == "run.final":   # ends its run at its head
                 n, head = log.runs[run]
                 data = {"head_run_seq": n - 1, "head_hash": head, **data}
-            log.add(type_, data, run)
-        runs = list(dict.fromkeys(run for *_, run in added))
+            log.add(type_, data, run, **(envelope[0] if envelope else {}))
+        runs = list(dict.fromkeys(run for _, _, run, *_ in added))
         for run in runs:
-            if ("run.final", run) not in {(t, r) for t, _, r in added}:
+            if ("run.final", run) not in {(t, r) for t, _, r, *_ in added}:
                 log.final(run)
         out = os.path.join(self.d, f"g{random.random()}.tkb")
         export(log.store, "acme", runs[0], log.note(), out, with_runs=runs[1:])
@@ -353,6 +353,8 @@ class TestVerifyV2(Case):
         rep, code = self.verify(tiers_bundle(self.log(), os.path.join(self.d, "tiers.tkb")))
         [line] = [c for c in rep.checks if c["check"] == "tiers"]
         self.assertEqual((code, line["status"], line["detail"]), (0, "warn", "5 tool call(s): T1 0, T2 1, T3 1, untiered 3"
+                                                                  "; T3 is receipt only (an OTLP import, or an agent's "
+                                                                  "own claim through a notary), not observed execution"
                                                                   "; 2 decided and completed by different capture paths"))
         self.assertEqual(line["problems"], ["run-a hijacked: gateway T2, sdk untiered", "run-a imported: gateway T2, import T3"])
         [held] = [c for c in rep.checks if c["check"] == "held calls"]
@@ -750,6 +752,7 @@ ENTRIES = {
         "tool_use_id": "t1", "approval_id": "apr-1", "decision": "approve", "approver": "token:reviewer",
         "approver_identity": AGENT, "channel": "rpc", "approver_kind": "agent"}, "run-a")],
     "approval.agents": [registered(), ("approval.agents", {"enabled": False, "by": "uid:0"}, "run-a")],
+    "source=notary": [(*registered(), {"source": "notary", "tier": "T3"})],
     "approval.request.agent": [registered(), asked(agent={
         "eligible": True, "reason": "within the bounds of R1", "rules": ["R1"],
         "conditions_hash": "sha256:" + "0" * 64, "args_key": "hmac-sha256:" + "0" * 64})],
@@ -776,7 +779,8 @@ class TestVersionTable(Case):
     def test_every_entry_gates_its_version(self):
         for version, added in VERSIONS.items():
             names = added["types"] + [f"{t}.{f}" for t, fs in added["fields"].items() for f in fs] + [
-                f"{t}.{f}={v}" for t, fs in added["values"].items() for f, vs in fs.items() for v in vs]
+                f"{t}.{f}={v}" for t, fs in added["values"].items() for f, vs in fs.items() for v in vs] + [
+                f"{f}={v}" for f, vs in added.get("envelope", {}).items() for v in vs]
             for name in names:
                 with self.subTest(name):
                     self.assertIn(name, ENTRIES, "add records that use it to ENTRIES")

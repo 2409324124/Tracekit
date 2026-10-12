@@ -21,7 +21,8 @@ from tracekit.format import checkpoint
 
 SRC = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TEMPLATES = os.path.join(SRC, "deploy", "compose")
-COPIED = ("docker-compose.yaml", ".env.example", "witness/Dockerfile", "witness/entrypoint.sh", "postgres/10-roles.sh")
+COPIED = ("docker-compose.yaml", ".env.example", "witness/Dockerfile", "witness/entrypoint.sh", "postgres/10-roles.sh",
+          "notary/signer.yaml", "notary/policy.yaml", "notary/notary.yaml")
 SIGNER_UID, WITNESS_UID, POSTGRES_UID = 10001, 10002, 999   # the signer image, witness/Dockerfile, postgres image
 OWNERS = {"signer.dsn": SIGNER_UID, "viewer.dsn": SIGNER_UID, "witness.key": WITNESS_UID, "witness.ssh": WITNESS_UID,
           "pg-admin.password": POSTGRES_UID, "pg-signer.password": POSTGRES_UID, "pg-viewer.password": POSTGRES_UID}

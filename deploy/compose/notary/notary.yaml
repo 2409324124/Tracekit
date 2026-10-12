@@ -1,0 +1,8 @@
+# The notary (docs/notary.md). Put its TLS certificate and key in ./tls/ (notary.pem, notary.key) and set `url` to the
+# address agents reach.
+http: {listen: 0.0.0.0:8443, cert: tls/notary.pem, key: tls/notary.key, tokens: /var/lib/tracekit-notary/tokens.json}
+url: https://notary.example.com
+signer: /run/tracekit-notary/signer.sock
+signer_config: signer.yaml                   # this directory's: the notary reads its store, read-only
+registrations: /var/lib/tracekit-notary/registrations.jsonl
+enabled: true

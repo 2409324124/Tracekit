@@ -289,6 +289,7 @@ STRICTNESS = ("allow", "flag", "ask", "deny")
 LIVE = ("requested", "approved")   # approval states that may still lead to a consume
 LIST_PAGE = 100
 T2 = {"source": "gateway", "tier": "T2"}   # a call a gateway or executor decided, ran and completed for its client
+NOTARY = {"source": "notary", "tier": "T3"}   # an action an agent asserted through a notary (`notaries`): its claim
 TICK_S = 1.0
 WITNESS_START_S = 30.0   # start-up: how long the witnesses, asked at once, have to say how far they cosigned
 CLOSE_WAIT_S = 60.0   # serve --close-on-stop: how long the final notes wait for witnesses (within the pod's grace)
@@ -310,7 +311,7 @@ TLOG_PATH = re.compile(r"/(?:registry/([0-9a-f]{32})/)?(?:(checkpoint)|tile/(ent
 CONFIG_KEYS = {"data_dir", "socket", "socket_mode", "tcp_endpoint", "http", "durability", "tenant", "tenants",
                "authorize", "limits", "acknowledge_rollback", "policy", "multi_tenant_apps", "migrators", "analyzers",
                "fail_modes", "grace_s", "idle_s", "origin", "metrics", "witnesses", "contact", "approvals",
-               "lock_timeout_s", "fsck_every_s", "clock_skew_s", "anchors", "otlp", "otel_out", "storage", "gateways",
+               "lock_timeout_s", "fsck_every_s", "clock_skew_s", "anchors", "otlp", "otel_out", "storage", "gateways", "notaries",
                "gateway_mandatory", "log_key", "harness_binding", "record_key", "route", "view", "decision_keys",
                "webhook", "content", "gateway_wait_s"}
 APPROVAL_KEYS = {"self_approval", "approvers", "break_glass", "persons", "webauthn", "agents", "ttl_s",
@@ -534,7 +535,7 @@ class SignerService:
                  fsck_every_s=FSCK_S, clock_skew_s=CLOCK_SKEW_S, rekor=None, otlp=None, otel_out=None,
                  storage_config=None, gateways=(), gateway_mandatory=False, log_key=None, slh_dsa_file=None,
                  harness_binding=None, record_key=None, route=None, oidc=None, decision_keys=None, webhooks=(),
-                 content=None, gateway_wait_s=GATEWAY_WAIT_S):
+                 content=None, gateway_wait_s=GATEWAY_WAIT_S, notaries=()):
         """`identity` answers the in-process SignerAPI calls (default: this process's uid); transports call
         handle_frame with the identity they established. `policy` is a policy2 Engine (default: load_policy()).
         `open_storage()` defaults to the store `storage_config` (the `storage` config section) names, else file storage
@@ -665,6 +666,7 @@ class SignerService:
         self.multi_tenant_apps, self.migrators, self.analyzers = set(multi_tenant_apps), set(migrators), set(analyzers)
         self._beats, self._beats_lock = {}, threading.Lock()   # run key -> monotonic time of its tailer's last heartbeat
         self._gateways, self.gateway_mandatory = {k: True for k in gateways}, bool(gateway_mandatory)
+        self._notaries = {k: True for k in notaries}
         self.gateway_wait_s = gateway_wait_s
         self.fail_modes, self.grace_s, self.idle_s = fail_modes, grace_s, idle_s
         self.otlp_max_spans = otlp.get("max_spans", OTLP_MAX_SPANS)
@@ -1800,6 +1802,10 @@ class SignerService:
     # --- methods ---
 
     def _register_run(self, identity, req):
+        identity, notary = self._as_caller(identity, "register_run", req)
+        if notary is not None and not lookup(self._notaries, subject(notary), False):
+            raise RPCError("forbidden", f"{subject(notary)[:256]} is a gateway, not a notary: only a notary registers a run "
+                                        "for a caller")
         sub = subject(identity)
         for field, allowed in (("tenant", self.multi_tenant_apps), ("source", self.migrators),
                                ("analyzes", self.analyzers), ("replay_of", self.analyzers)):
@@ -1879,7 +1885,7 @@ class SignerService:
                 data.update(parent_run=parent["run_id"], session=run["session"])
             if harness:
                 data["harness"] = dict(harness, attested=True)
-            tx.emit(run, "run.registered", data, request_id=req["request_id"], **top)
+            tx.emit(run, "run.registered", data, request_id=req["request_id"], **top, **self._top(notary))
             if up and harness:   # the parent's records name a child its harness process started
                 tx.emit(up, "run.child", {"run_id": run_id}, source="signer")
             other = harness and n and not req.keys() & {"analyzes", "replay_of", "source"} and self._overlapping(
@@ -1905,7 +1911,7 @@ class SignerService:
 
     def _decide(self, identity, req):
         identity, gw = self._as_caller(identity, "decide", req)
-        key, top, holder = self._authorize(identity, req, gw), T2 if gw else {}, _holder(gw, req)
+        key, top, holder = self._authorize(identity, req, gw), self._top(gw), _holder(gw, req)
         self.quotas.take_event(gw or identity)
         tool, tcid, attempt, hint = req["tool"], req["tool_call_id"], req.get("attempt", 0), req.get("tool_class_hint")
         args, digest = self._args(req)
@@ -2014,7 +2020,7 @@ class SignerService:
 
     def _complete(self, identity, req):
         identity, gw = self._as_caller(identity, "complete", req)
-        key, top, holder = self._authorize(identity, req, gw), T2 if gw else {}, _holder(gw, req)
+        key, top, holder = self._authorize(identity, req, gw), self._top(gw), _holder(gw, req)
         tcid, attempt, did = req["tool_call_id"], req.get("attempt", 0), req["decision_id"]
         # read off the writer thread, which checks the decision again; unknown after a restart (arguments are never
         # logged), so a replayed decision redacts as if the call touched a .env file
@@ -2081,7 +2087,7 @@ class SignerService:
 
     def _observe(self, identity, req):
         identity, gw = self._as_caller(identity, "observe", req)
-        key, top = self._authorize(identity, req, gw), T2 if gw else {}
+        key, top = self._authorize(identity, req, gw), self._top(gw)
         try:
             value, manifest = _redact(req["value"], False)
             c = canonical(value)
@@ -2137,13 +2143,17 @@ class SignerService:
         token and grants; the events are the gateway's, charged to its own rate."""
         if "caller" not in req:
             return identity, None
-        if not lookup(self._gateways, subject(identity), False):
+        if not (lookup(self._gateways, subject(identity), False) or lookup(self._notaries, subject(identity), False)):
             raise RPCError("forbidden", f"{subject(identity)[:256]} is not a configured gateway")
         if len(subject(identity)) > 256:   # each of its records names it in full (`via`)
             raise RPCError("forbidden", f"{subject(identity)[:64]}...: a gateway's identity is at most 256 characters")
         gw, identity = identity, CallerIdentity(*req["caller"].split(":", 1), True)
         self._grant(identity, method)
         return identity, gw
+
+    def _top(self, gw):
+        """The record envelope of a call a gateway (T2) or a notary (NOTARY) made for its caller; {} for the client's own."""
+        return {} if gw is None else NOTARY if lookup(self._notaries, subject(gw), False) else T2
 
     @staticmethod
     def _hold(call, holder, tcid):
@@ -2194,7 +2204,7 @@ class SignerService:
 
     def _approval_request(self, identity, req):
         identity, gw = self._as_caller(identity, "approval_request", req)
-        key, top, holder = self._authorize(identity, req, gw), T2 if gw else {}, _holder(gw, req)
+        key, top, holder = self._authorize(identity, req, gw), self._top(gw), _holder(gw, req)
         tcid, sub = req["tool_call_id"], subject(identity)
         attempt = req.get("attempt", 0)
         self.quotas.take_event(gw or identity)
@@ -3137,10 +3147,11 @@ def load_config(path):
     if "webhook" in cfg:
         cfg["webhook"] = webhook.load(cfg["webhook"], base, path)
     approvals = cfg.get("approvals") if isinstance(cfg.get("approvals"), dict) else {}
-    if any(len(str(k)) > 256 for k in cfg.get("gateways") or ()):   # each record names its gateway in full (`via`)
-        raise ValueError(f"{path}: gateways: an identity is at most 256 characters")
+    for key in ("gateways", "notaries"):   # each record names its gateway or notary in full (`via`)
+        if any(len(str(k)) > 256 for k in cfg.get(key) or ()):
+            raise ValueError(f"{path}: {key}: an identity is at most 256 characters")
     for table in (cfg.get("tenants"), cfg.get("authorize"), approvals.get("approvers"), approvals.get("break_glass"),
-                  cfg.get("gateways")):
+                  cfg.get("gateways"), cfg.get("notaries")):
         for k in table or ():
             if "*" in str(k) and not (str(k).endswith(PREFIX_ENDS) and str(k).count("*") == 1):
                 raise ValueError(f"{path}: {k!r}: a prefix key must end in :* or /*")
@@ -3241,6 +3252,7 @@ def open_service(cfg, **kw):
                          clock_skew_s=float(cfg.get("clock_skew_s", CLOCK_SKEW_S)),
                          rekor=(cfg.get("anchors") or {}).get("rekor"), otlp=cfg.get("otlp"),
                          otel_out=cfg.get("otel_out"), storage_config=cfg.get("storage"), gateways=cfg.get("gateways", ()),
+                         notaries=cfg.get("notaries", ()),
                          gateway_mandatory=cfg.get("gateway_mandatory") is True,
                          harness_binding=cfg.get("harness_binding"), record_key=cfg.get("record_key"),
                          route=cfg.get("route"), decision_keys=cfg.get("decision_keys"), webhooks=cfg.get("webhook", ()),

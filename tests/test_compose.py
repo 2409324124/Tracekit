@@ -112,11 +112,11 @@ class ComposeFile(unittest.TestCase):
             c = yaml.safe_load(f)
         s = c["services"]
         custody = {"gateway", "executor", "mcp-gateway"}
-        self.assertEqual(set(s), {"postgres", "signer", "witness", "viewer", "agent"} | custody)
+        self.assertEqual(set(s), {"postgres", "signer", "witness", "viewer", "agent", "notary-signer", "notary"} | custody)
         for name, svc in s.items():
             for sec in svc.get("secrets", ()):
                 self.assertTrue(os.path.isfile(os.path.join(self.out, c["secrets"][sec]["file"])), sec)
-            self.assertLessEqual(set(svc["networks"]), set(c["networks"]), name)
+            self.assertLessEqual(set(svc.get("networks", ())), set(c["networks"]), name)
             for k, v in (svc.get("environment") or {}).items():   # keys and DSNs are files, never environment
                 self.assertTrue(k.endswith("_FILE") or k == "POSTGRES_DB", (name, k))
             if name != "postgres":
@@ -132,17 +132,21 @@ class ComposeFile(unittest.TestCase):
         self.assertEqual([v for v in others if v.startswith("signer-run:") and not v.endswith(":ro")],
                          ["signer-run:/run/tracekit-signer"])
         self.assertTrue(all(v.get("internal") for n, v in c["networks"].items() if n not in ("front", "egress")))
-        self.assertEqual([n for n, svc in s.items() if "front" in svc["networks"]], ["viewer"])
+        self.assertEqual([n for n, svc in s.items() if "front" in svc.get("networks", ())], ["viewer", "notary"])
         for name in custody:   # their credentials in their own directory; only they reach upstreams
             self.assertEqual((s[name]["profiles"], s[name]["networks"], s[name]["volumes"][0]),
                              (["custody"], ["agent", "egress"], f"./custody/{name}:/etc/tracekit/custody:ro"))
             self.assertNotIn("secrets", s[name])
-        self.assertEqual({n for n, svc in s.items() if "egress" in svc["networks"]}, custody)
+        self.assertEqual({n for n, svc in s.items() if "egress" in svc.get("networks", ())}, custody)
         self.assertEqual(len({s[n]["user"] for n in custody} | {s["agent"]["user"]}), 4)   # each its own uid
         self.assertTrue(all(p.startswith("127.0.0.1:") for p in s["viewer"]["ports"]))
         with open(os.path.join(self.out, ".env.example"), encoding="utf-8") as f:
             env = [line for line in f.read().splitlines() if line and not line.startswith("#")]
-        self.assertEqual([line.split("=")[0] for line in env], ["VIEWER_PORT"])
+        self.assertEqual([line.split("=")[0] for line in env], ["VIEWER_PORT", "NOTARY_PORT"])
+        # the notary: its own signer, reachable by nothing but the notary's socket; the notary reads its store read-only
+        self.assertEqual((s["notary-signer"]["profiles"], s["notary-signer"]["network_mode"]), (["notary"], "none"))
+        self.assertIn("notary-signer-data:/var/lib/tracekit-notary-signer:ro", s["notary"]["volumes"])
+        self.assertNotIn("secrets", s["notary"])
         with open(os.path.join(self.out, "witness", "Dockerfile"), encoding="utf-8") as f:
             df = f.read()
         self.assertRegex(df, r"ARG GO=golang:[^@\s]+@sha256:[0-9a-f]{64}")

@@ -58,7 +58,8 @@ VERSIONS = {
                          "approval": ["approver_kind", "asserted", "spent", "not_before", "consume_by"],
                          "approval.expired": ["reason"]},
               "values": {"capture.gap": {"kind": ["decided_not_completed", "late_activity", "concurrent_run",
-                                                  "tailer_redelegated", "reask_after_reject", "held_call_unresolved"]}}},
+                                                  "tailer_redelegated", "reask_after_reject", "held_call_unresolved"]}},
+              "envelope": {"source": ["notary"]}},
 }
 KEY_TYPES = ("signer.epoch", "key.retire")
 
@@ -78,7 +79,8 @@ def run_name(tenant, run_id):
 def _uses(event, added):
     typ, data = event["type"], event["data"]
     return typ in added["types"] or any(f in data for f in added["fields"].get(typ, ())) or any(
-        f in data and data[f] in values for f, values in added["values"].get(typ, {}).items())
+        f in data and data[f] in values for f, values in added["values"].get(typ, {}).items()) or any(
+        event.get(f) in values for f, values in added.get("envelope", {}).items())
 
 
 def needs(events):

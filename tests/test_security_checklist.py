@@ -22,7 +22,7 @@ from http.server import ThreadingHTTPServer
 
 from test_e13_approvals import Sessions
 from test_observe_render import XSS
-from tracekit import (executor, gateway, ingest, mcp_gateway, observe, otlp, proxy, public_witness_server,
+from tracekit import (executor, gateway, ingest, mcp_gateway, notary, observe, otlp, proxy, public_witness_server,
                       slack_approvals, witness_server)
 from tracekit.observe import _session
 from tracekit.identity.token import BearerToken
@@ -49,6 +49,7 @@ SURFACES = {
     "tracekit/gateway.py:_Handler": "LLM gateway",
     "tracekit/executor.py:_Executor": "tool executor",
     "tracekit/mcp_gateway.py:_McpGateway": "MCP gateway",
+    "tracekit/notary.py:_NotaryHandler": "Tracekit Notary (MCP and A2A for agents)",
     "tracekit/signer/metrics.py:Handler": "signer metrics, logs list and tlog tiles",
     "tracekit/otlp.py:H": "local OTLP receiver (tracekit otel serve)",
     "tracekit/ingest.py:H": "remote ingest",
@@ -185,6 +186,15 @@ class Surfaces(unittest.TestCase):
                              ("POST", "/mcp", {}, 401), ("POST", "/mcp", {**auth, "Content-Length": BIG}, 413),
                              ("PUT", "/mcp", auth, 501)]
 
+    def notary(self):
+        srv = transport.HttpServer(("127.0.0.1", 0), [BearerToken(self.bearer)], None, None,
+                                   handler=notary._NotaryHandler)
+        srv.notary = types.SimpleNamespace(cfg={"url": "https://notary.test", "max_body": 1024})
+        auth = {"Authorization": f"Bearer {SECRET}"}
+        return srv, SECRET, [("GET", f"/nope?token={SECRET}", auth, 404), ("POST", f"/nope?token={SECRET}", auth, 404),
+                             ("POST", "/mcp", {"Authorization": f"Bearer {SECRET}x", "Content-Length": "2"}, 401),
+                             ("POST", "/a2a", {**auth, "Content-Length": BIG}, 413), ("PUT", "/mcp", auth, 501)]
+
     def metrics(self):
         srv = metrics.server({"listen": "127.0.0.1:0"}, metrics.SignerMetrics())
         return srv, SECRET, [("GET", f"/nope?token={SECRET}", {}, 404), ("POST", "/metrics", {}, 501)]
@@ -235,7 +245,7 @@ class Surfaces(unittest.TestCase):
 
     PROBES = {"tracekit/observe.py:Handler": viewer, "tracekit/transport/http.py:_Handler": signer_http,
               "tracekit/gateway.py:_Handler": gateway, "tracekit/executor.py:_Executor": executor,
-              "tracekit/mcp_gateway.py:_McpGateway": mcp_gateway, "tracekit/signer/metrics.py:Handler": metrics,
+              "tracekit/mcp_gateway.py:_McpGateway": mcp_gateway, "tracekit/notary.py:_NotaryHandler": notary, "tracekit/signer/metrics.py:Handler": metrics,
               "tracekit/otlp.py:H": otlp, "tracekit/ingest.py:H": ingest, "tracekit/witness_server.py:H": witness,
               "tracekit/proxy.py:Handler": proxy, "tracekit/slack_approvals.py:Handler": slack,
               "tracekit/public_witness_server.py:H": public_witness}

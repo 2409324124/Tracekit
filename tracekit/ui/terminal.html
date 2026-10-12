@@ -1812,7 +1812,7 @@
       if (sel.pre) {
         const a = sel, v = a.v2 || {}, ap = a.approvals.filter(x => x.v2.type === "approval").pop()?.v2.approval;
         const out = a.denied ? ["s-deny", "BLOCKED"] : a.error ? ["s-err", "FAILED"] : v.decision === "ask" && ap !== "approve" ? ["s-flag", ap ? ap.toUpperCase() : "HELD"] : a.post ? ["s-ok", v.decision === "ask" ? "APPROVED · RAN" : "RAN"] : ["s-run", "NO RESULT YET"];
-        const left = `<dl class="kv"><dt>CALL</dt><dd style="color:var(--cyan)">${esc(a.tool)}</dd><dt>RUN</dt><dd>${esc(label(a.agent))}</dd><dt>TIME</dt><dd>${esc(fmtT(a.start))}${a.ms != null ? ` · ${esc(a.ms)} ms` : ""}</dd>
+        const left = `<dl class="kv"><dt>CALL</dt><dd style="color:var(--cyan)">${esc(a.tool)}</dd><dt>RUN</dt><dd>${esc(label(a.agent))}</dd><dt>TIME</dt><dd>${esc(fmtT(a.start))}${a.ms != null ? ` · ${esc(a.ms)} ms` : ""}</dd>${a.pre.tk_source === "notary" ? `<dt>CLAIM</dt><dd class="dim">asserted by the agent, notarized at ${esc(fmtT(a.start))}: not proof that nothing else ran</dd>` : ""}
       <dt>DECISION</dt><dd>${esc(String(v.decision).toUpperCase())} → <span class="${esc(out[0])}">${esc(out[1])}</span></dd><dt>RULES</dt><dd>` + rulesHtml(v.rules) + `</dd>` + verdictLine(a.pre.session_id) + `</dl>
       <div class="sec">ARGUMENTS</div><dl class="kv"><dt>commitment</dt><dd class="hash" title="${esc(v.args_commitment)}">${esc(short(v.args_commitment))}</dd><dt></dt><dd class="dim">arguments are a salted commitment; <code>tracekit signer reveal --record ${esc(lseq(a.pre))}</code> gives an auditor the salt</dd><dt>policy</dt><dd class="dim" title="${esc(v.policy_hash)}">${esc(short(v.policy_hash))}</dd></dl>` + argsFrom(a);
         let right = a.approvals.length ? `<div class="sec">APPROVAL</div><dl class="kv">` + a.approvals.map(r => `<dt>${esc(fmtT(r.ts))}</dt><dd class="go" data-tkseq="${esc(r.tk_seq)}">${esc(r.title)}<div class="dim">${esc(r.text)}</div></dd>`).join("") + `</dl>` : "";
@@ -1821,7 +1821,7 @@
         return cols(left, right + evidence(a.pre) + (a.post ? evidence(a.post) : ""));
       }
       const v = sel.v2 || {};
-      let left = `<dl class="kv"><dt>TYPE</dt><dd>${esc(v.type || sel.event)}</dd><dt>TIME</dt><dd>${esc(fmtT(sel.ts))}</dd><dt>SOURCE</dt><dd>${esc(sel.signer ? "signer" : sel.agent)}</dd>${sel.title ? `<dt>EVENT</dt><dd>${esc(sel.title)}</dd>` : ""}`;
+      let left = `<dl class="kv"><dt>TYPE</dt><dd>${esc(v.type || sel.event)}</dd><dt>TIME</dt><dd>${esc(fmtT(sel.ts))}</dd><dt>SOURCE</dt><dd>${esc(sel.tk_source === "notary" ? `asserted by the agent, notarized at ${fmtT(sel.ts)}` : sel.signer ? "signer" : sel.agent)}</dd>${sel.title ? `<dt>EVENT</dt><dd>${esc(sel.title)}</dd>` : ""}`;
       if (!sel.review) left += `<dt>DETAIL</dt><dd>${esc(sel.text || sel.reason || sel.source || sel.prompt || "")}</dd>`;
       if (v.rules) left += `<dt>RULES</dt><dd>` + rulesHtml(v.rules) + `</dd>`;
       if (v.approver) left += `<dt>APPROVER</dt><dd>${esc(v.approver)}</dd><dt>VIA</dt><dd>${esc(v.via ? v.via + " (a bridge vouches for the person)" : "the approver's own connection")}</dd><dt>SELF</dt><dd class="${v.self_approved ? "s-deny" : ""}">${esc(v.self_approved ? "self-approved" : "not self-approved")}</dd>${v.break_glass ? `<dt>BREAK-GLASS</dt><dd class="s-deny">yes: outside the approver list, with a reason</dd>` : ""}`;

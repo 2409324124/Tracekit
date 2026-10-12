@@ -1,5 +1,5 @@
 include README.md LICENSE CHANGELOG.md SECURITY.md pyproject.toml
-include tracekit_sdk.py
+include tracekit_sdk.py tracekit/notary_skill.md
 recursive-include tracekit/schema *.json
 recursive-include tracekit/policy *.yaml
 recursive-include tracekit/policy2 *.yaml

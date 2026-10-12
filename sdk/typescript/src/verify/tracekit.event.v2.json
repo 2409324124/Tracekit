@@ -82,9 +82,10 @@
         "sdk",
         "migrated",
         "import",
-        "gateway"
+        "gateway",
+        "notary"
       ],
-      "description": "Capture path. transcript = harness-reported, lower trust; import = received over OTLP, or another system's decision (decision_import) (tier T3): receipt only; gateway = model.exchange recorded by the LLM gateway, or a tool call (policy.decision, approval.request, tool.result) or an input (input.observed) the MCP gateway or a tool executor decided, ran or received for its client (tier T2)."
+      "description": "Capture path. transcript = harness-reported, lower trust; import = received over OTLP, or another system's decision (decision_import) (tier T3): receipt only; gateway = model.exchange recorded by the LLM gateway, or a tool call (policy.decision, approval.request, tool.result) or an input (input.observed) the MCP gateway or a tool executor decided, ran or received for its client (tier T2); notary (1.2) = a run or an action an agent asserted through a Tracekit Notary (tier T3): the agent claimed it then, unaltered since, not that nothing else ran."
     },
     "type": {
       "enum": [

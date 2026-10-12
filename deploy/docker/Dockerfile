@@ -29,7 +29,11 @@ RUN --mount=type=bind,from=build,source=/wheels,target=/wheels \
  && groupadd -g 10001 tracekit \
  && useradd -u 10001 -g 10001 -M -d /nonexistent -s /usr/sbin/nologin tracekit \
  && install -d -o 10001 -g 10001 -m 0700 /var/lib/tracekit-signer \
- && install -d -o 10001 -g 10001 -m 0755 /run/tracekit-signer
+ && install -d -o 10001 -g 10001 -m 0755 /run/tracekit-signer \
+ && install -d -o 10001 -g 10001 -m 0750 /var/lib/tracekit-notary-signer \
+ && install -d -o 10001 -g 10001 -m 0755 /run/tracekit-notary \
+ && install -d -o 10015 -g 10001 -m 0700 /var/lib/tracekit-notary
+# the notary (uid 10015, group 10001) reads its signer's store (group-readable) and log.vkey, never its keys (0600)
 # /etc/tracekit/packs: the installed policy packs (tracekit/policy2/packs); signer.yaml runs packs/server.yaml
 COPY deploy/docker/signer.yaml.example /etc/tracekit/signer.yaml
 VOLUME ["/var/lib/tracekit-signer", "/run/tracekit-signer"]

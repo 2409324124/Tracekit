@@ -547,7 +547,7 @@ def _verify(rep, manifest, files, trust, v1_ledger, v1_key, monitor_reports, rev
     # names, and untiered for a decision or result that names none, so a call decided at T2 and completed elsewhere
     # isn't T2;
     # paths: the (source, tier)s of its decisions and results, which differ only when another layer answered for it
-    order, tiers, claims, paths = (None, "T3", "T1", "T2"), {}, {}, {}
+    order, tiers, claims, paths, notarized = (None, "T3", "T1", "T2"), {}, {}, {}, set()
     for r in every:
         e = r["event"]
         if e.get("tool_call_id") is None:
@@ -558,6 +558,8 @@ def _verify(rep, manifest, files, trust, v1_ledger, v1_key, monitor_reports, rev
             claims[k] = min(claims.get(k, tier), tier, key=order.index)
         if decided:
             paths.setdefault(k, set()).add((str(e.get("source"))[:64], tier))
+            if e.get("source") == "notary":
+                notarized.add(k)
     tiers.update(claims)
     split = [f"{str(k[0])[:200]} {str(k[1])[:200]}: " + ", ".join(sorted(f"{s} {t or 'untiered'}" for s, t in p))
              for k, p in paths.items() if len(p) > 1]
@@ -565,6 +567,9 @@ def _verify(rep, manifest, files, trust, v1_ledger, v1_key, monitor_reports, rev
         n = collections.Counter(tiers.values())
         rep.check("tiers", not split, f"{len(tiers)} tool call(s): "
                   + ", ".join(f"{t} {n[t]}" for t in ("T1", "T2", "T3")) + (f", untiered {n[None]}" if n[None] else "")
+                  + ("; T3 is receipt only (an OTLP import, or an agent's own claim through a notary), not observed "
+                     "execution" if n["T3"] else "")
+                  + (f"; {len(notarized)} notarized: asserted by the agent, notarized when signed" if notarized else "")
                   + (f"; {len(split)} decided and completed by different capture paths" if split else ""),
                   split[:20], warn=True)
     sources = collections.Counter(r["event"]["args_source"] for r in every if "args_source" in r["event"])

@@ -1,10 +1,10 @@
 """The signer RPC contract, version 16: one JSON Schema per request and response, the error shape, and `SignerAPI`.
 
 Frozen: a change to any schema here is a new RPC_VERSION. Version 16 (all of Tracekit 1.2) adds register_run's optional
-`parent`, close_run's optional `last_client_seq` (and a gateway's `caller`), `tailer_heartbeat`, args digests on tool uses
-the provider ran, and agent approvers (approval_review, approval_revoke, approval_agents, approval_decide's `escalate`
-and `asserted`, approval_list's filters); a signer serves RPC_MIN..RPC_VERSION (its `hello` `proto`), so a version 15
-client keeps working unchanged.
+`parent` (and a notary's `caller`), close_run's optional `last_client_seq` (and a gateway's `caller`), `tailer_heartbeat`,
+args digests on tool uses the provider ran, and agent approvers (approval_review, approval_revoke, approval_agents,
+approval_decide's `escalate` and `asserted`, approval_list's filters); a signer serves RPC_MIN..RPC_VERSION (its `hello`
+`proto`), so a version 15 client keeps working unchanged.
 The caller's identity comes from the transport (peer credentials, token, mTLS), never from a request field. Calls that change state carry `request_id`, scoped to that
 identity: a retry with the same id and payload gets the original response, the same id with another payload is refused
 with `conflict`, and the same id from another identity is a different request.
@@ -137,6 +137,7 @@ _AGENT_SUMMARY = _obj(["approval_id", "state", "tool", "rule_ids", "policy_hash"
 
 REQUESTS = {
     "register_run": _obj(["request_id", "agent"], request_id=ID, run_id=ID,
+                         caller=IDENTITY,   # from a `notaries` identity: the agent it registers the run for
                          tenant=ID, principal=_str(256),   # app-asserted; recorded as not attested
                          principal_token=_str(16384),   # an end user's OIDC token: principal attested
                          source={"const": "migrated"},     # events imported from another log

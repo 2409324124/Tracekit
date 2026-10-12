@@ -400,7 +400,7 @@ async function check(rep: Report, manifest: J, files: Map<string, Uint8Array>, t
   // isn't T2;
   // paths: the (source, tier)s of its decisions and results, which differ only when another layer answered for it
   const order: J[] = [null, "T3", "T1", "T2"];
-  const tiers = new Map<string, J>(), claims = new Map<string, J>(), paths = new Map<string, Set<string>>();
+  const tiers = new Map<string, J>(), claims = new Map<string, J>(), paths = new Map<string, Set<string>>(), notarized = new Set<string>();
   for (const e of events) {
     if (get(e, "tool_call_id") === null) continue;
     const k = JSON.stringify([get(e, "run_id"), e.tool_call_id]);
@@ -412,6 +412,7 @@ async function check(rep: Report, manifest: J, files: Map<string, Uint8Array>, t
       claims.set(k, order.indexOf(had) <= order.indexOf(tier) ? had : tier);
     }
     if (decided) paths.set(k, (paths.get(k) ?? new Set()).add(`${cut(str(get(e, "source")), 64)} ${tier ?? "untiered"}`));
+    if (decided && get(e, "source") === "notary") notarized.add(k);
   }
   for (const [k, t] of claims) tiers.set(k, t);
   const split = [...paths].filter(([, p]) => p.size > 1).map(([k, p]) => {
@@ -421,7 +422,10 @@ async function check(rep: Report, manifest: J, files: Map<string, Uint8Array>, t
   if (tiers.size) {
     const n = (t: J) => [...tiers.values()].filter((x) => x === t).length;
     rep.check("tiers", !split.length, `${tiers.size} tool call(s): ` + ["T1", "T2", "T3"].map((t) => `${t} ${n(t)}`).join(", ")
-      + (n(null) ? `, untiered ${n(null)}` : "") + (split.length ? `; ${split.length} decided and completed by different capture paths` : ""),
+      + (n(null) ? `, untiered ${n(null)}` : "")
+      + (n("T3") ? "; T3 is receipt only (an OTLP import, or an agent's own claim through a notary), not observed execution" : "")
+      + (notarized.size ? `; ${notarized.size} notarized: asserted by the agent, notarized when signed` : "")
+      + (split.length ? `; ${split.length} decided and completed by different capture paths` : ""),
     split.slice(0, 20), true);
   }
   const sources = events.filter((e) => has(e, "args_source")).map((e) => e.args_source);
