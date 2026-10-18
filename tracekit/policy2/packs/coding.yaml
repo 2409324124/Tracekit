@@ -7,7 +7,7 @@
 # normalised one), with `\` as `/` and also casefolded (the agent's file system may ignore case). Rules stay tripwires: the
 # protection is the signer, its storage and the witnesses.
 
-version: '2026.10-v2-5'
+version: '2026.10-v2-6'
 description: coding agents on a laptop (Claude Code, Codex, Cursor, Gemini)
 # laptop: a tool the pack does not map is flagged, not held; server.yaml holds it for a person (ask)
 unknown_tools: flag
@@ -121,6 +121,14 @@ deny:
     pattern: '(^|/)(etc/tracekit|var/lib/tracekit[^/]*|run/tracekit|\.tracekit-signer|\.tracekit-client|[Ll]ibrary/[Aa]pplication [Ss]upport/tracekit|\.local/share/tracekit|run/user/[0-9]+/tracekit|tmp/(tracekit|tk)-[0-9]+|(site|dist)-packages/tracekit/policy2/packs)(/|$)|/[Aa]pp[Dd]ata/[Ll]ocal/tracekit(/|$)'
     reason: writing Tracekit's own files, signer state or policy
     rationale: The file-editing twin of TK-D007; /etc/tracekit holds the signer config and policy, the dev data dir its keys and store.
+
+ask:
+  - id: TK-A001
+    class: shell
+    # argv, so a command that only mentions these (echo, grep, a commit message) is not held
+    pattern: '^(terraform|tofu) (.* )?(destroy|apply (.* )?-destroy)( |$)|^pulumi (.* )?destroy( |$)|^railway (.* )?(delete|down)( |$)|^fly(ctl)? (.* )?(destroy|volumes? (destroy|delete))( |$)|^heroku (.* )?(apps:destroy|pg:reset)( |$)|^dropdb( |$)|^(curl|wget|http|xh)( .*)?[^A-Za-z](volume|service|environment|project|database)Delete[^A-Za-z]'
+    reason: destroying infrastructure or a hosted database
+    rationale: The 2026 incidents where coding agents wiped production (a Railway volumeDelete call, a terraform destroy) were one command each. A person confirms these; plan, status and logs are allowed.
 
 flag:
   - id: TK-F001
