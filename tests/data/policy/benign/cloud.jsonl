@@ -69,3 +69,11 @@
 {"tool": "mcp:aws/describe_log_groups", "args": {"prefix": "/aws/lambda"}, "expect": "allow", "note": "read through a cloud MCP tool"}
 {"tool": "mcp:aws/suggest_aws_commands", "args": {"query": "how do I delete an S3 bucket"}, "expect": "allow", "note": "read through a cloud MCP tool"}
 {"tool": "mcp:kubernetes/resources_get", "args": {"kind": "Deployment", "name": "api"}, "expect": "allow", "note": "read through a cloud MCP tool"}
+{"tool": "Bash", "args": {"command": "railway status"}, "expect": "allow", "note": "read, list or create"}
+{"tool": "Bash", "args": {"command": "railway logs --service api"}, "expect": "allow", "note": "read, list or create"}
+{"tool": "shell", "args": {"command": "railway variables --service api"}, "expect": "allow", "note": "read, list or create"}
+{"tool": "Bash", "args": {"command": "fly volumes list"}, "expect": "allow", "note": "read, list or create"}
+{"tool": "bash", "args": {"command": "heroku pg:info --app acme"}, "expect": "allow", "note": "read, list or create"}
+{"tool": "Bash", "args": {"command": "pulumi preview --stack prod"}, "expect": "allow", "note": "read, list or create"}
+{"tool": "Bash", "args": {"command": "grep -rn volumeDelete src/"}, "expect": "allow", "note": "read, list or create"}
+{"tool": "Bash", "args": {"command": "git commit -m 'never railway down on prod'"}, "expect": "allow", "note": "read, list or create"}
