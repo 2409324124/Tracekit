@@ -217,6 +217,13 @@ def normalise(harness, p):
                 out["error"] = p.get("error")
         if ev == "UserPromptSubmit":
             out["prompt"] = p.get("prompt")
+            if harness == "qwen":
+                # Qwen Code also fires it as it continues after tool results (prompt "") and with a Stop hook's reason;
+                # only a prompt the person submitted carries submitted_prompt (0.22 on), before @file expansion
+                typed = p.get("submitted_prompt")
+                if not isinstance(typed, str) or not typed.strip():
+                    return None
+                out["prompt"] = typed
         if ev == "SessionEnd":
             out["reason"] = p.get("reason") or "session end"
         return out

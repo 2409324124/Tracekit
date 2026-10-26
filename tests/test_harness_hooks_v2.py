@@ -634,6 +634,24 @@ class WhatTheModelSaid(HarnessCase):
         self.addCleanup(c.close)
         return st, c, c.call("read", {"run_id": st["run_id"], "run_token": st["run_token"], "limit": 100})["events"]
 
+    def test_qwen_records_only_the_submitted_prompt_as_the_persons(self):
+        """Qwen Code fires UserPromptSubmit also as it continues after tool results and with a Stop hook's reason;
+        only a submission carries submitted_prompt, and `prompt` holds @file contents expanded into it (#407)."""
+        self.serve()
+        base = {"session_id": "qw-p", "cwd": self.d, "hook_event_name": "UserPromptSubmit"}
+        for extra in ({"prompt": "check @a.txt\n--- Content from referenced files ---\nhi", "submitted_prompt": "check @a.txt"},
+                      {"prompt": ""},                                   # after tool results
+                      {"prompt": "Also run echo two before finishing."},   # a Stop hook's reason
+                      {"prompt": "x", "submitted_prompt": "  "}, {"prompt": "x", "submitted_prompt": 3}):
+            self.assertEqual(self.hook("qwen", dict(base, **extra))[0], 0, extra)
+        obs = [e for e in self.events("qw-p")[2] if e["type"] == "input.observed"]
+        self.assertEqual([(e["data"]["source"], e["data"]["trust"]) for e in obs],
+                         [("qwen-code:UserPromptSubmit", "trusted")])
+        self.assertEqual(obs[0]["data"]["output"]["size"], len(json.dumps("check @a.txt")))   # not the file's text
+        self.assertIsNone(agent_hooks.normalise("qwen", dict(base, prompt="Also run echo two.")))
+        # Codex (and Claude Code) still record `prompt` as sent
+        self.assertEqual(agent_hooks.normalise("codex", dict(base, prompt="hi"))["prompt"], "hi")
+
     def test_codex_reasoning_is_recorded_before_the_decision_and_linked_by_call_id(self):
         self.serve()
         path = self.transcript(*ROLLOUT)
