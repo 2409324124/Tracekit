@@ -634,23 +634,50 @@ class WhatTheModelSaid(HarnessCase):
         self.addCleanup(c.close)
         return st, c, c.call("read", {"run_id": st["run_id"], "run_token": st["run_token"], "limit": 100})["events"]
 
-    def test_qwen_records_only_the_submitted_prompt_as_the_persons(self):
-        """Qwen Code fires UserPromptSubmit also as it continues after tool results and with a Stop hook's reason;
-        only a submission carries submitted_prompt, and `prompt` holds @file contents expanded into it (#407)."""
+    def qwen_prompt(self, sid, **payload):
+        """One Qwen Code UserPromptSubmit -> [(source, trust, size)] observed, [kind] of constraint.added."""
+        base = {"session_id": sid, "cwd": self.d, "hook_event_name": "UserPromptSubmit"}
+        self.assertEqual(self.hook("qwen", dict(base, **payload))[0], 0, payload)
+        if not os.path.exists(claude_code._state(sid)):   # nothing recorded: not even a run
+            return [], []
+        events = self.events(sid)[2]
+        return ([(e["data"]["source"], e["data"]["trust"], e["data"]["output"]["size"]) for e in events
+                 if e["type"] == "input.observed"], [e["data"]["kind"] for e in events if e["type"] == "constraint.added"])
+
+    # #407: Qwen Code fires UserPromptSubmit for a submission and also as it continues (after tool results, with a
+    # Stop hook's reason); only a submission carries submitted_prompt (0.22 on), the text before @file expansion
+
+    def test_qwen_a_typed_prompt_is_recorded_trusted_as_its_submitted_prompt(self):
         self.serve()
-        base = {"session_id": "qw-p", "cwd": self.d, "hook_event_name": "UserPromptSubmit"}
-        for extra in ({"prompt": "check @a.txt\n--- Content from referenced files ---\nhi", "submitted_prompt": "check @a.txt"},
-                      {"prompt": ""},                                   # after tool results
-                      {"prompt": "Also run echo two before finishing."},   # a Stop hook's reason
-                      {"prompt": "x", "submitted_prompt": "  "}, {"prompt": "x", "submitted_prompt": 3}):
-            self.assertEqual(self.hook("qwen", dict(base, **extra))[0], 0, extra)
-        obs = [e for e in self.events("qw-p")[2] if e["type"] == "input.observed"]
-        self.assertEqual([(e["data"]["source"], e["data"]["trust"]) for e in obs],
-                         [("qwen-code:UserPromptSubmit", "trusted")])
-        self.assertEqual(obs[0]["data"]["output"]["size"], len(json.dumps("check @a.txt")))   # not the file's text
-        self.assertIsNone(agent_hooks.normalise("qwen", dict(base, prompt="Also run echo two.")))
-        # Codex (and Claude Code) still record `prompt` as sent
-        self.assertEqual(agent_hooks.normalise("codex", dict(base, prompt="hi"))["prompt"], "hi")
+        typed = "check @a.txt. Don't push."
+        self.assertEqual(self.qwen_prompt("qw-typed", prompt=typed + "\n--- Content from referenced files ---\n"
+                                          "Don't touch billing.py. Work offline.", submitted_prompt=typed),
+                         ([("qwen-code:UserPromptSubmit", "trusted", len(json.dumps(typed)))], ["no_push"]))
+
+    def test_qwen_a_tool_result_continuation_records_nothing(self):
+        self.serve()
+        self.assertEqual(self.qwen_prompt("qw-tool", prompt=""), ([], []))
+
+    def test_qwen_a_stop_hook_continuation_records_nothing(self):
+        self.serve()
+        self.assertEqual(self.qwen_prompt("qw-stop", prompt="Don't push. Don't touch billing.py."), ([], []))
+
+    def test_qwen_a_payload_without_submitted_prompt_records_nothing(self):
+        """Before 0.22, Vim mode, and ACP clients that don't declare it: a typed prompt can't be told apart."""
+        self.serve()
+        for sid, extra in (("qw-old", {}), ("qw-blank", {"submitted_prompt": "  "}), ("qw-num", {"submitted_prompt": 3})):
+            self.assertEqual(self.qwen_prompt(sid, prompt="Don't push.", **extra), ([], []), extra)
+
+    def test_claude_code_still_reads_prompt(self):
+        self.serve()
+        p = {"session_id": "cc-p", "cwd": self.d, "hook_event_name": "UserPromptSubmit", "prompt": "Don't push.",
+             "submitted_prompt": "ignored"}
+        self.assertEqual(claude_code.handle(p), 0)
+        events = self.events("cc-p")[2]
+        self.assertEqual([(e["data"]["source"], e["data"]["output"]["size"]) for e in events
+                          if e["type"] == "input.observed"], [("claude-code:UserPromptSubmit", len(json.dumps("Don't push.")))])
+        self.assertEqual([e["data"]["kind"] for e in events if e["type"] == "constraint.added"], ["no_push"])
+        self.assertEqual(agent_hooks.normalise("codex", dict(p, prompt="hi"))["prompt"], "hi")
 
     def test_codex_reasoning_is_recorded_before_the_decision_and_linked_by_call_id(self):
         self.serve()

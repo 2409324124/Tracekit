@@ -220,6 +220,7 @@ def normalise(harness, p):
             if harness == "qwen":
                 # Qwen Code also fires it as it continues after tool results (prompt "") and with a Stop hook's reason;
                 # only a prompt the person submitted carries submitted_prompt (0.22 on), before @file expansion
+                # (handle reads the live constraints from this out['prompt'] too, not the raw payload)
                 typed = p.get("submitted_prompt")
                 if not isinstance(typed, str) or not typed.strip():
                     return None
