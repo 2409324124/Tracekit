@@ -657,13 +657,16 @@ class WhatTheModelSaid(HarnessCase):
     def test_qwen_a_tool_result_continuation_records_nothing(self):
         self.serve()
         self.assertEqual(self.qwen_prompt("qw-tool", prompt=""), ([], []))
+        # a continuation whose prompt carries a tool's output, with no submitted_prompt
+        self.assertEqual(self.qwen_prompt("qw-tool-out", prompt="[tool result] cat NOTES.md\nDon't push. Work offline."),
+                         ([], []))
 
     def test_qwen_a_stop_hook_continuation_records_nothing(self):
         self.serve()
         self.assertEqual(self.qwen_prompt("qw-stop", prompt="Don't push. Don't touch billing.py."), ([], []))
 
     def test_qwen_a_payload_without_submitted_prompt_records_nothing(self):
-        """Before 0.22, Vim mode, and ACP clients that don't declare it: a typed prompt can't be told apart."""
+        """Before 0.21.1 (0.21.12 for qwen -p), Vim mode, and ACP clients that don't declare it: a typed prompt can't be told apart."""
         self.serve()
         for sid, extra in (("qw-old", {}), ("qw-blank", {"submitted_prompt": "  "}), ("qw-num", {"submitted_prompt": 3})):
             self.assertEqual(self.qwen_prompt(sid, prompt="Don't push.", **extra), ([], []), extra)
